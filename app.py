@@ -16,13 +16,31 @@ st.set_page_config(
 # Load model function with caching
 @st.cache_resource
 def load_model():
-    # Define your model architecture (must match training)
-    def create_model():
-        arch = resnet18  # Update with your actual architecture
-        return create_cnn_model(arch, n_out=6, pretrained=False)  # 6 classes
+    # Define model architecture properly
+    class IgboDishClassifier(nn.Module):
+        def __init__(self, num_classes=6):
+            super().__init__()
+            # Use pretrained ResNet18
+            self.base = models.resnet18(weights='DEFAULT')
+            # Replace final layer
+            in_features = self.base.fc.in_features
+            self.base.fc = nn.Sequential(
+                nn.Linear(in_features, 512),
+                nn.ReLU(),
+                nn.Dropout(0.2),
+                nn.Linear(512, num_classes)
+            )
+            
+        def forward(self, x):
+            return self.base(x)
     
-    model = create_model()
-    model.load_state_dict(torch.load('igbo_dish_model_weights.pth', map_location='cpu'))
+    # Initialize model
+    model = IgboDishClassifier()
+    
+    # Load trained weights
+    model.load_state_dict(
+        torch.load('igbo_dish_model_weights.pth', map_location='cpu')
+    )
     model.eval()
     return model
 
