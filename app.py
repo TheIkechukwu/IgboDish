@@ -16,25 +16,28 @@ st.set_page_config(
 
 @st.cache_resource
 def load_model():
-    # 1. Recreate EXACT FastAI architecture
+    # 1. EXACT FastAI ResNet18 architecture
     body = models.resnet18(pretrained=False)
-    body = nn.Sequential(*list(body.children())[:-2])  # Remove original head
+    body = nn.Sequential(*list(body.children())[:-2])  # Keep convolutional base
     
-    # 2. Add FastAI's default head
+    # 2. Recreate FastAI's custom head
     head = nn.Sequential(
-        nn.AdaptiveAvgPool2d(1),
+        nn.AdaptiveConcatPool2d(1),  # Critical FastAI component
         nn.Flatten(),
-        nn.Linear(512, 6)  # Direct to class count
+        nn.BatchNorm1d(1024),        # From 512*2 (concat pool)
+        nn.Dropout(0.25),
+        nn.Linear(1024, 512),
+        nn.ReLU(inplace=True),
+        nn.BatchNorm1d(512),
+        nn.Dropout(0.5),
+        nn.Linear(512, 6)            # Final output layer
     )
     
     model = nn.Sequential(body, head)
     
-    # 3. Load weights with proper mapping
-    model.load_state_dict(
-        torch.load('igbo_dish_model_weights.pth', 
-                  map_location='cpu'),
-        strict=True
-    )
+    # 3. Load weights with exact architecture match
+    state_dict = torch.load('igbo_dish_model_weights.pth', map_location='cpu')
+    model.load_state_dict(state_dict, strict=True)
     model.eval()
     return model
 
@@ -71,46 +74,88 @@ def predict(img_tensor):
 
 # Wikipedia info function
 def get_dish_info(dish):
-    page = wiki.page(f"{dish} soup")
-    info = {'history': '', 'ingredients': '', 'preparation': ''}
-    sections = {
-        'history': ['History', 'Origin'],
-        'ingredients': ['Ingredients'],
-        'preparation': ['Preparation', 'Recipe']
+    page = wiki.page(f"{dish} Soup")  # Try with capitalized soup
+    info = {
+        'history': '',
+        'ingredients': '',
+        'preparation': ''
     }
-    for cat in sections:
-        for sec in sections[cat]:
-            section = page.section_by_title(sec)
-            if section:
-                info[cat] += section.text + "\n\n"
+    
+    # Section fallback system
+    section_map = {
+        'history': ['History', 'Origin', 'Background'],
+        'ingredients': ['Ingredients', 'Components'],
+        'preparation': ['Preparation', 'Cooking', 'Recipe']
+    }
+    
+    for category in section_map:
+        for section_name in section_map[category]:
+            section = page.section_by_title(section_name)
+            if section and not info[category]:
+                info[category] = section.text
+                break
+                
     return info
 
 # Streamlit UI
-st.title("🍲 Igbo Dish Classifier")
-uploaded_file = st.file_uploader("Upload dish image", type=["jpg", "png", "jpeg"])
+def main():
+    st.title("🍲 Igbo Traditional Dish Classifier")
+    
+    col1, col2 = st.columns([1, 2])
+    
+    with col1:
+        uploaded_file = st.file_uploader(
+            "Upload dish image", 
+            type=["jpg", "png", "jpeg"],
+            help="Supported formats: JPG, PNG, JPEG"
+        )
+        
+        if uploaded_file:
+            img = Image.open(uploaded_file).convert('RGB')
+            st.image(img, use_container_width=True)
+            
+            with st.spinner("Analyzing ingredients and textures..."):
+                tensor = image_transform(img)
+                probs = predict(tensor)
+                pred_class = class_labels[np.argmax(probs)]
+                confidence = np.max(probs)
+    
+    if uploaded_file:
+        with col2:
+            st.subheader(f"**Prediction**: {pred_class}")
+            st.metric("Confidence", f"{confidence*100:.1f}%")
+            
+            dish_info = get_dish_info(pred_class)
+            
+            with st.expander("📜 History & Cultural Significance", expanded=True):
+                st.write(dish_info['history'] or "Historical information being gathered...")
+            
+            with st.expander("🥕 Key Ingredients"):
+                st.write(dish_info['ingredients'] or "Ingredients list coming soon!")
+            
+            with st.expander("👩🍳 Traditional Preparation"):
+                st.write(dish_info['preparation'] or "Preparation methods documentation in progress")
+            
+            st.markdown("---")
+            st.write("**Explore Igbo Cuisine**")
+            st.page_link("https://en.wikipedia.org/wiki/Igbo_cuisine", 
+                        label="Wikipedia: Igbo Culinary Traditions")
+    
+    # Example images carousel
+    st.markdown("---")
+    st.subheader("Common Igbo Dishes")
+    cols = st.columns(6)
+    for col, dish in zip(cols, class_labels):
+        with col:
+            try:
+                st.image(
+                    f"examples/{dish}.jpg",
+                    caption=dish,
+                    use_container_width=True,
+                    output_format="JPEG"
+                )
+            except FileNotFoundError:
+                st.error(f"Example image missing for {dish}")
 
-if uploaded_file:
-    img = Image.open(uploaded_file).convert('RGB')
-    st.image(img, use_container_width=True)
-    
-    tensor = image_transform(img)
-    probs = predict(tensor)
-    pred_class = class_labels[np.argmax(probs)]
-    confidence = np.max(probs)
-    
-    st.subheader(f"Prediction: {pred_class} ({confidence*100:.1f}% confidence)")
-    
-    info = get_dish_info(pred_class)
-    with st.expander("History"):
-        st.write(info['history'] or "No history found")
-    with st.expander("Ingredients"):
-        st.write(info['ingredients'] or "Ingredients not listed")
-    with st.expander("Preparation"):
-        st.write(info['preparation'] or "Preparation steps unavailable")
-
-st.markdown("---")
-st.write("Sample dishes:")
-cols = st.columns(6)
-for col, dish in zip(cols, class_labels):
-    with col:
-        st.image(f"examples/{dish}.jpg", caption=dish, use_container_width=True)
+if __name__ == "__main__":
+    main()
