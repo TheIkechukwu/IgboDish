@@ -26,7 +26,7 @@ class IgboDishClassifier(nn.Module):
             nn.ReLU(),
             nn.Dropout(0.2),
             nn.Linear(512, num_classes)
-    
+        )
     def forward(self, x):
         return self.base(x)
 
