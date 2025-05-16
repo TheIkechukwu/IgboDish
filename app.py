@@ -2,9 +2,11 @@
 import streamlit as st
 from PIL import Image
 import torch
+import torchvision.models as models
+from torch import nn
 from torchvision import transforms
-import wikipediaapi
 import numpy as np
+import wikipediaapi
 
 # Set up page config
 st.set_page_config(
@@ -13,31 +15,25 @@ st.set_page_config(
     layout="wide"
 )
 
+# Define model architecture
+class IgboDishClassifier(nn.Module):
+    def __init__(self, num_classes=6):
+        super().__init__()
+        self.base = models.resnet18(weights=models.ResNet18_Weights.DEFAULT)
+        in_features = self.base.fc.in_features
+        self.base.fc = nn.Sequential(
+            nn.Linear(in_features, 512),
+            nn.ReLU(),
+            nn.Dropout(0.2),
+            nn.Linear(512, num_classes)
+    
+    def forward(self, x):
+        return self.base(x)
+
 # Load model function with caching
 @st.cache_resource
 def load_model():
-    # Define model architecture properly
-    class IgboDishClassifier(nn.Module):
-        def __init__(self, num_classes=6):
-            super().__init__()
-            # Use pretrained ResNet18
-            self.base = models.resnet18(weights='DEFAULT')
-            # Replace final layer
-            in_features = self.base.fc.in_features
-            self.base.fc = nn.Sequential(
-                nn.Linear(in_features, 512),
-                nn.ReLU(),
-                nn.Dropout(0.2),
-                nn.Linear(512, num_classes)
-            )
-            
-        def forward(self, x):
-            return self.base(x)
-    
-    # Initialize model
     model = IgboDishClassifier()
-    
-    # Load trained weights
     model.load_state_dict(
         torch.load('igbo_dish_model_weights.pth', map_location='cpu')
     )
@@ -60,21 +56,22 @@ def image_transform(image):
     transform = transforms.Compose([
         transforms.Resize((224, 224)),
         transforms.ToTensor(),
-        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], 
+                            std=[0.229, 0.224, 0.225])
     ])
     return transform(image).unsqueeze(0)
 
 # Prediction function
-def predict(image):
+def predict(img_tensor):
     model = load_model()
     with torch.no_grad():
-        outputs = model(image)
+        outputs = model(img_tensor)
         probabilities = torch.nn.functional.softmax(outputs, dim=1)
     return probabilities.numpy()[0]
 
 # Wikipedia information function
 def get_dish_info(dish_name):
-    page = wiki.page(dish_name + " soup")
+    page = wiki.page(f"{dish_name} soup")
     sections = {
         'history': ['History', 'Origin'],
         'ingredients': ['Ingredients'],
@@ -98,7 +95,8 @@ st.write("Upload an image of an Igbo dish to identify it and learn about its his
 col1, col2 = st.columns([1, 2])
 
 with col1:
-    uploaded_file = st.file_uploader("Choose an image...", type=["jpg", "jpeg", "png"])
+    uploaded_file = st.file_uploader("Choose an image...", 
+                                    type=["jpg", "jpeg", "png"])
     
     if uploaded_file is not None:
         image = Image.open(uploaded_file).convert('RGB')
@@ -116,7 +114,8 @@ with col1:
 with col2:
     if uploaded_file:
         st.subheader(f"Prediction: {pred_class}")
-        st.progress(float(confidence), text=f"Confidence: {confidence*100:.1f}%")
+        st.progress(float(confidence), 
+                   text=f"Confidence: {confidence*100:.1f}%")
         
         # Get Wikipedia information
         dish_info = get_dish_info(pred_class)
@@ -133,13 +132,23 @@ with col2:
         st.markdown("---")
         st.write("**Did you know?**")
         st.write("Explore more about Igbo cuisine:")
-        st.page_link("https://en.wikipedia.org/wiki/Igbo_cuisine", label="Wikipedia: Igbo Cuisine")
+        st.page_link("https://en.wikipedia.org/wiki/Igbo_cuisine", 
+                    label="Wikipedia: Igbo Cuisine")
     else:
         st.write("Upload an image to get started!")
 
 # Add sample images
 st.subheader("Example Dishes")
 cols = st.columns(6)
-for i, (col, dish) in enumerate(zip(cols, class_labels)):
+for col, dish in zip(cols, class_labels):
     with col:
-        st.image(f"examples/{dish}.jpg", caption=dish, use_column_width=True)
+        try:
+            st.image(f"examples/{dish}.jpg", 
+                     caption=dish, 
+                     use_container_width=True)
+        except FileNotFoundError:
+            st.write(f"Example image for {dish} not found")
+
+# Add footer
+st.markdown("---")
+st.markdown("**Note**: Predictions are based on visual analysis and may not be 100% accurate. Always verify with culinary experts.")
