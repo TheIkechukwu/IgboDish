@@ -29,8 +29,10 @@ with open('classes.txt') as f:
     class_labels = [line.strip() for line in f.readlines()]
 
 # Configure Gemini API
-google_api_key = None
+google_api_key = None # Initialize to None
 try:
+    # Attempt to get API key from Streamlit secrets or environment variable
+    # Streamlit Cloud uses st.secrets, local development can use os.environ
     google_api_key = st.secrets["GOOGLE_API_KEY"]
     st.info("API Key loaded from Streamlit secrets.")
 except KeyError:
@@ -41,7 +43,7 @@ except KeyError:
 
 if not google_api_key:
     st.error("Gemini API Key not found. Please set it in .streamlit/secrets.toml or as an environment variable.")
-    st.stop()
+    st.stop() # Stop the app if no API key
 
 # It's crucial to configure genai ONLY if a key is found.
 genai.configure(api_key=google_api_key)
@@ -101,9 +103,10 @@ def get_dish_info_gemini(dish_name):
                     debug_info.append(f"Candidate {i}:")
                     debug_info.append(f"  Finish Reason: {candidate.finish_reason}")
                     if candidate.safety_ratings:
+                        # CORRECTED LINE HERE:
                         safety_ratings_str = ", ".join([
                             f"{sr.category.name}: {sr.probability.name}"
-                            for sr in sr.category.name, sr.probability.name in candidate.safety_ratings
+                            for sr in candidate.safety_ratings # Corrected this part
                         ])
                         debug_info.append(f"  Safety Ratings: {safety_ratings_str}")
                     else:
@@ -134,7 +137,7 @@ model = load_model()
 def main():
     st.title("🍲 Igbo Dish Classifier")
 
-    global model_genai
+    global model_genai # Access the global model_genai variable
 
     st.subheader("Gemini Model Initialization Check")
     # --- Model Availability Check ---
@@ -170,7 +173,7 @@ def main():
                     break
 
             if not found_preferred:
-                model_name = available_models[0].split('/')[-1]
+                model_name = available_models[0].split('/')[-1] # Get just the name
                 model_genai = genai.GenerativeModel(model_name)
                 st.success(f"Switched to '{model_name}' (first available).")
 
