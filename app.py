@@ -5,7 +5,7 @@ import torch
 from torchvision import transforms
 from fastai.vision.all import create_cnn_model, resnet18
 import google.generativeai as genai
-import os # To access environment variables for API key
+import os
 
 # Class index to dish name
 idx_to_label = {
@@ -29,9 +29,8 @@ with open('classes.txt') as f:
     class_labels = [line.strip() for line in f.readlines()]
 
 # Configure Gemini API
+google_api_key = None
 try:
-    # Attempt to get API key from Streamlit secrets or environment variable
-    # Streamlit Cloud uses st.secrets, local development can use os.environ
     google_api_key = st.secrets["GOOGLE_API_KEY"]
 except KeyError:
     google_api_key = os.getenv("GOOGLE_API_KEY")
@@ -43,7 +42,9 @@ if not google_api_key:
 genai.configure(api_key=google_api_key)
 
 # Initialize the Generative Model
-model_genai = genai.GenerativeModel('gemini-pro')
+# We'll try to determine a suitable model dynamically or based on availability
+global model_genai
+model_genai = None # Initialize as None
 
 # Image transformations
 def transform_image(image):
@@ -67,7 +68,9 @@ def predict(model, image):
 # Gemini API info fetcher
 @st.cache_data(show_spinner="Fetching delicious details with Gemini...")
 def get_dish_info_gemini(dish_name):
-    # Craft a clear and specific prompt for Gemini
+    if model_genai is None:
+        return "Gemini model could not be initialized. Please check API key and model availability."
+
     prompt = f"""
     Provide information about the Igbo dish '{dish_name}'.
     Organize the information into the following sections:
@@ -79,17 +82,61 @@ def get_dish_info_gemini(dish_name):
     """
     try:
         response = model_genai.generate_content(prompt)
-        # Access the text directly from the response
         return response.text
     except Exception as e:
         st.error(f"Error fetching info from Gemini: {e}")
-        return "Could not retrieve detailed information at this time."
+        return "Could not retrieve detailed information at this time. (Gemini API error)"
 
 model = load_model()
 
 # Streamlit UI
 def main():
     st.title("🍲 Igbo Dish Classifier")
+
+    global model_genai # Access the global model_genai variable
+
+    # --- Model Availability Check ---
+    try:
+        # Try to initialize gemini-pro first
+        model_genai = genai.GenerativeModel('gemini-pro')
+        # Test if it supports generate_content
+        test_response = model_genai.generate_content("hello", stream=True)
+        for chunk in test_response: # Iterate to force connection
+            pass
+        st.success("Successfully connected to Gemini Pro.")
+    except Exception as e:
+        st.warning(f"Could not initialize 'gemini-pro': {e}")
+        st.info("Attempting to find an alternative Gemini model...")
+
+        available_models = []
+        try:
+            for m in genai.list_models():
+                if 'generateContent' in m.supported_generation_methods:
+                    available_models.append(m.name)
+            st.info(f"Available models supporting 'generateContent': {', '.join(available_models)}")
+
+            # Try a common alternative
+            if 'models/gemini-1.5-flash-latest' in available_models:
+                model_genai = genai.GenerativeModel('gemini-1.5-flash-latest')
+                st.success("Switched to 'gemini-1.5-flash-latest'.")
+            elif 'models/gemini-1.0-pro' in available_models:
+                model_genai = genai.GenerativeModel('gemini-1.0-pro')
+                st.success("Switched to 'gemini-1.0-pro'.")
+            elif available_models:
+                # Pick the first available if none of the preferred are found
+                model_name = available_models[0].split('/')[-1] # Get just the name
+                model_genai = genai.GenerativeModel(model_name)
+                st.success(f"Switched to '{model_name}'.")
+            else:
+                st.error("No suitable Gemini model found supporting 'generateContent'. Please check your API key region and Google AI Studio.")
+                st.stop() # Stop the app if no model is found
+
+        except Exception as list_e:
+            st.error(f"Error listing available models: {list_e}")
+            st.error("Cannot proceed without a working Gemini model.")
+            st.stop()
+    # --- End Model Availability Check ---
+
 
     col1, col2 = st.columns([1, 2])
 
@@ -116,32 +163,23 @@ def main():
             gemini_info_text = get_dish_info_gemini(label)
 
             # Parse the Gemini response into sections
-            # This is a simple parsing. You might need more robust parsing
-            # if Gemini's output format varies.
-            history_start = gemini_info_text.find("**Cultural Significance/History**:")
-            ingredients_start = gemini_info_text.find("**Key Ingredients**:")
-            preparation_start = gemini_info_text.find("**Traditional Preparation**:")
-
             history_content = "Cultural history documentation in progress."
             ingredients_content = "Typical ingredients being researched."
             preparation_content = "Preparation methods coming soon."
 
-            if history_start != -1:
-                end_idx = min(ingredients_start if ingredients_start != -1 else len(gemini_info_text),
-                              preparation_start if preparation_start != -1 else len(gemini_info_text))
-                history_content = gemini_info_text[history_start + len("**Cultural Significance/History**:") : end_idx].strip()
-                if not history_content: history_content = "Cultural history documentation in progress."
+            # A more robust parsing attempt:
+            if "**Cultural Significance/History**:" in gemini_info_text:
+                history_content = gemini_info_text.split("**Cultural Significance/History**:")[1].split("**Key Ingredients**")[0].strip()
+            if "**Key Ingredients**:" in gemini_info_text:
+                ingredients_content = gemini_info_text.split("**Key Ingredients**:")[1].split("**Traditional Preparation**")[0].strip()
+            if "**Traditional Preparation**:" in gemini_info_text:
+                preparation_content = gemini_info_text.split("**Traditional Preparation**:")[1].strip()
 
+            # Fallback if parsing results in empty strings
+            if not history_content: history_content = "Cultural history documentation in progress."
+            if not ingredients_content: ingredients_content = "Typical ingredients being researched."
+            if not preparation_content: preparation_content = "Preparation methods coming soon."
 
-            if ingredients_start != -1:
-                end_idx = min(preparation_start if preparation_start != -1 else len(gemini_info_text),
-                              len(gemini_info_text))
-                ingredients_content = gemini_info_text[ingredients_start + len("**Key Ingredients**:") : end_idx].strip()
-                if not ingredients_content: ingredients_content = "Typical ingredients being researched."
-
-            if preparation_start != -1:
-                preparation_content = gemini_info_text[preparation_start + len("**Traditional Preparation**:") :].strip()
-                if not preparation_content: preparation_content = "Preparation methods coming soon."
 
             # Display information using expanders
             with st.expander("🌍 Cultural Significance", expanded=True):
