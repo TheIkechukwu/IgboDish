@@ -94,15 +94,20 @@ def get_dish_info_gemini(dish_name):
             st.subheader("🧪 Gemini Candidates (Debug)")
             for i, cand in enumerate(response.candidates):
                 st.markdown(f"**Candidate {i}**")
-                st.text_area(f"Candidate {i} Text", cand.text or "No text", height=150)
+                content = cand.content.parts[0].text if cand.content and cand.content.parts else "No text content"
+                st.text_area(f"Candidate {i} Text", content, height=150)
                 if cand.finish_reason:
                     st.markdown(f"Finish Reason: `{cand.finish_reason}`")
                 if cand.safety_ratings:
                     for sr in cand.safety_ratings:
                         st.markdown(f"- {sr.category.name}: `{sr.probability.name}`")
 
-        if response.text and response.text.strip():
+        if hasattr(response, "text") and response.text and response.text.strip():
             return response.text.strip()
+
+        if hasattr(response, "candidates") and response.candidates:
+            first = response.candidates[0]
+            return first.content.parts[0].text if first.content and first.content.parts else "No content returned."
 
         return "Gemini response was empty or blocked. Check debug info above."
 
