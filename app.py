@@ -13,7 +13,7 @@ try:
 except KeyError:
     google_api_key = os.getenv("GOOGLE_API_KEY")
 
-genai.configure(api_key=google_api_key)
+genai.configure(api_key = google_api_key)
 
 # Class index to dish name
 idx_to_label = {
