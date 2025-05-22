@@ -55,45 +55,31 @@ def predict(model, image):
         idx = torch.argmax(probs).item()
         return idx_to_label[idx], probs[idx].item()
 
-# Enhanced Gemini info fetcher
+@st.cache_data(show_spinner=False)
 def get_dish_info(dish_name):
     model = genai.GenerativeModel("gemini-2.0-flash")
-    
+
     prompt = f"""
-    Provide detailed and structured information about the Igbo dish called '{dish_name}'.
+    Provide structured information in markdown format about the Igbo dish '{dish_name}'.
     
     Include:
-    1. History or cultural origin
-    2. Common ingredients
-    3. Traditional preparation method
-    
-    Format:
-    History: ...
-    Ingredients: ...
-    Preparation: ...
+    ## History
+    (Brief cultural or historical background.)
+
+    ## Ingredients
+    (List of key ingredients in bullet points.)
+
+    ## Preparation
+    (A few sentences describing traditional preparation.)
+
+    If the dish is unknown, state so.
     """
-    
+
     try:
         response = model.generate_content(prompt)
-        content = response.text
-
-        # Parse response into sections
-        info = {'history': '', 'ingredients': '', 'preparation': ''}
-        for line in content.splitlines():
-            if line.lower().startswith("history:"):
-                info['history'] = line.split(":", 1)[1].strip()
-            elif line.lower().startswith("ingredients:"):
-                info['ingredients'] = line.split(":", 1)[1].strip()
-            elif line.lower().startswith("preparation:"):
-                info['preparation'] = line.split(":", 1)[1].strip()
-        return info
-
+        return response.text
     except Exception as e:
-        return {
-            'history': '',
-            'ingredients': '',
-            'preparation': f"Could not fetch information: {e}"
-        }
+        return f"**Error fetching dish info:** {e}"
 
 model = load_model()
 
@@ -122,16 +108,10 @@ def main():
             st.subheader(f"**Identification**: {label}")
             st.metric("Confidence Level", f"{confidence*100:.1f}%")
 
-            info = get_dish_info(label)
+            markdown_info = get_dish_info(label)
 
-            with st.expander("🌍 Cultural Significance", expanded=True):
-                st.write(info['history'] or "Cultural history documentation in progress")
-
-            with st.expander("🛒 Key Ingredients"):
-                st.write(info['ingredients'] or "Typical ingredients being researched")
-
-            with st.expander("👩🍳 Traditional Preparation"):
-                st.write(info['preparation'] or "Preparation methods coming soon")
+            with st.expander("📖 Dish Information", expanded=True):
+                st.markdown(markdown_info)
 
             st.markdown("---")
             st.write("**Explore More**")
