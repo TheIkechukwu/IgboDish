@@ -49,35 +49,18 @@ def predict(model, image):
         idx = torch.argmax(probs).item()
         return idx_to_label[idx], probs[idx].item()
 
-# Enhanced Wikipedia info fetcher using 'wikipedia'
-def get_dish_info(dish_name):
-    variants = [f"{dish_name} (Igbo dish)", f"{dish_name} (Igbo cuisine)", dish_name]
-    info = {'history': '', 'ingredients': '', 'preparation': ''}
-
-    sections = {
-        'history': ['history', 'origin', 'background'],
-        'ingredients': ['ingredients', 'components'],
-        'preparation': ['preparation', 'recipe', 'method']
-    }
-
-    for title in variants:
+def get_wiki_info(dish_name):
+    try:
+        summary = wikipedia.summary(dish_name + " (Igbo cuisine)", sentences=3)
+        page = wikipedia.page(dish_name + " (Igbo cuisine)")
+        return summary, page.url
+    except:
         try:
-            page = wikipedia.page(title)
-            content = page.content
-            content_lower = content.lower()
-            for category, keywords in sections.items():
-                for keyword in keywords:
-                    if keyword in content_lower and not info[category]:
-                        split_index = content_lower.find(keyword)
-                        if split_index != -1:
-                            para = content[split_index:].split("\n\n", 1)[0]
-                            info[category] = para.strip()
-                            break
-            break
-        except (wikipedia.exceptions.DisambiguationError, wikipedia.exceptions.PageError):
-            continue
-
-    return info
+            summary = wikipedia.summary(dish_name, sentences=3)
+            page = wikipedia.page(dish_name)
+            return summary, page.url
+        except:
+            return "No Wikipedia info found.", ""
 
 model = load_model()
 
@@ -106,21 +89,15 @@ def main():
             st.subheader(f"**Identification**: {label}")
             st.metric("Confidence Level", f"{confidence*100:.1f}%")
 
-            info = get_dish_info(label)
+            summary, url = get_wiki_info(label)
 
-            with st.expander("🌍 Cultural Significance", expanded=True):
-                st.write(info['history'] or "Cultural history documentation in progress")
-
-            with st.expander("🛒 Key Ingredients"):
-                st.write(info['ingredients'] or "Typical ingredients being researched")
-
-            with st.expander("👩🍳 Traditional Preparation"):
-                st.write(info['preparation'] or "Preparation methods coming soon")
+            with st.expander("Summary", expanded=True):
+                st.write(summary or "Ouch! Summary not available on Wikipedia")
 
             st.markdown("---")
             st.write("**Explore More**")
-            st.page_link("https://en.wikipedia.org/wiki/Igbo_cuisine",
-                         label="Igbo Culinary Traditions on Wikipedia")
+            st.page_link(url,
+                         label="Read more on Wikipedia")
 
     # Example dishes gallery
     st.markdown("---")
