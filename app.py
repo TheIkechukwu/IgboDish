@@ -5,7 +5,15 @@ import torch
 from torchvision import transforms
 from fastai.vision.all import create_cnn_model, resnet18
 import google.generativeai as genai
-import os  # To access environment variables for API key
+import os
+
+# Set Gemini API key
+try:
+    google_api_key = st.secrets["GOOGLE_API_KEY"]
+except KeyError:
+    google_api_key = os.getenv("GOOGLE_API_KEY")
+
+genai.configure(api_key=google_api_key)
 
 # Class index to dish name
 idx_to_label = {
@@ -24,24 +32,9 @@ def load_model(weights_path="igbo_dish_model_weights.pth", num_classes=6):
     model.eval()
     return model
 
-# Load class labels (ensure classes.txt exists)
+# Load class labels
 with open('classes.txt') as f:
     class_labels = [line.strip() for line in f.readlines()]
-
-# Configure Gemini API
-try:
-    google_api_key = st.secrets["GOOGLE_API_KEY"]
-except KeyError:
-    google_api_key = os.getenv("GOOGLE_API_KEY")
-
-if not google_api_key:
-    st.error("Gemini API Key not found. Please set it in .streamlit/secrets.toml or as an environment variable.")
-    st.stop()
-
-genai.configure(api_key=google_api_key)
-
-# Initialize the Generative Model
-model_genai = genai.GenerativeModel('gemini-2.0-flash')
 
 # Image transformations
 def transform_image(image):
@@ -62,58 +55,45 @@ def predict(model, image):
         idx = torch.argmax(probs).item()
         return idx_to_label[idx], probs[idx].item()
 
-# Gemini API info fetcher (debug version)
-def get_dish_info_gemini(dish_name):
+# Enhanced Gemini info fetcher
+def get_dish_info(dish_name):
+    model = genai.GenerativeModel("gemini-2.0-flash")
+    
     prompt = f"""
-    Provide information about the Igbo dish '{dish_name}'.
-    Organize the information into the following sections:
-    1.  **Cultural Significance/History**: Briefly describe its origin, cultural importance, or traditional context.
-    2.  **Key Ingredients**: List the primary ingredients.
-    3.  **Traditional Preparation**: Briefly explain the typical method of preparation.
-
-    Format your response clearly with bold headings for each section. If a piece of information is not readily available, state "Information not available."
+    Provide detailed and structured information about the Igbo dish called '{dish_name}'.
+    
+    Include:
+    1. History or cultural origin
+    2. Common ingredients
+    3. Traditional preparation method
+    
+    Format:
+    History: ...
+    Ingredients: ...
+    Preparation: ...
     """
-
-    st.subheader("🔍 Debug: Gemini Prompt")
-    st.code(prompt, language="markdown")
-
+    
     try:
-        response = model_genai.generate_content(prompt)
+        response = model.generate_content(prompt)
+        content = response.text
 
-        st.subheader("📤 Raw Gemini Response")
-        try:
-            st.text_area("Raw Text Output", response.text or "No response.text found.", height=200)
-        except:
-            st.warning("Could not extract `response.text`.")
-
-        if response.prompt_feedback:
-            st.subheader("🛡️ Prompt Feedback (Safety/Blocking)")
-            st.write(response.prompt_feedback)
-
-        if response.candidates:
-            st.subheader("🧪 Gemini Candidates (Debug)")
-            for i, cand in enumerate(response.candidates):
-                st.markdown(f"**Candidate {i}**")
-                content = cand.content.parts[0].text if cand.content and cand.content.parts else "No text content"
-                st.text_area(f"Candidate {i} Text", content, height=150)
-                if cand.finish_reason:
-                    st.markdown(f"Finish Reason: `{cand.finish_reason}`")
-                if cand.safety_ratings:
-                    for sr in cand.safety_ratings:
-                        st.markdown(f"- {sr.category.name}: `{sr.probability.name}`")
-
-        if hasattr(response, "text") and response.text and response.text.strip():
-            return response.text.strip()
-
-        if hasattr(response, "candidates") and response.candidates:
-            first = response.candidates[0]
-            return first.content.parts[0].text if first.content and first.content.parts else "No content returned."
-
-        return "Gemini response was empty or blocked. Check debug info above."
+        # Parse response into sections
+        info = {'history': '', 'ingredients': '', 'preparation': ''}
+        for line in content.splitlines():
+            if line.lower().startswith("history:"):
+                info['history'] = line.split(":", 1)[1].strip()
+            elif line.lower().startswith("ingredients:"):
+                info['ingredients'] = line.split(":", 1)[1].strip()
+            elif line.lower().startswith("preparation:"):
+                info['preparation'] = line.split(":", 1)[1].strip()
+        return info
 
     except Exception as e:
-        st.error(f"Error calling Gemini API: {e}")
-        return "Could not retrieve information (API error)."
+        return {
+            'history': '',
+            'ingredients': '',
+            'preparation': f"Could not fetch information: {e}"
+        }
 
 model = load_model()
 
@@ -142,47 +122,23 @@ def main():
             st.subheader(f"**Identification**: {label}")
             st.metric("Confidence Level", f"{confidence*100:.1f}%")
 
-            with st.spinner("Fetching dish details from Gemini..."):
-                gemini_info_text = get_dish_info_gemini(label)
-
-            history_start = gemini_info_text.find("**Cultural Significance/History**:")
-            ingredients_start = gemini_info_text.find("**Key Ingredients**:")
-            preparation_start = gemini_info_text.find("**Traditional Preparation**:")
-
-            history_content = "Cultural history documentation in progress."
-            ingredients_content = "Typical ingredients being researched."
-            preparation_content = "Preparation methods coming soon."
-
-            if history_start != -1:
-                end_idx = min(ingredients_start if ingredients_start != -1 else len(gemini_info_text),
-                              preparation_start if preparation_start != -1 else len(gemini_info_text))
-                history_content = gemini_info_text[history_start + len("**Cultural Significance/History**:") : end_idx].strip()
-                if not history_content: history_content = "Cultural history documentation in progress."
-
-            if ingredients_start != -1:
-                end_idx = min(preparation_start if preparation_start != -1 else len(gemini_info_text),
-                              len(gemini_info_text))
-                ingredients_content = gemini_info_text[ingredients_start + len("**Key Ingredients**:") : end_idx].strip()
-                if not ingredients_content: ingredients_content = "Typical ingredients being researched."
-
-            if preparation_start != -1:
-                preparation_content = gemini_info_text[preparation_start + len("**Traditional Preparation**:") :].strip()
-                if not preparation_content: preparation_content = "Preparation methods coming soon."
+            info = get_dish_info(label)
 
             with st.expander("🌍 Cultural Significance", expanded=True):
-                st.write(history_content)
+                st.write(info['history'] or "Cultural history documentation in progress")
 
             with st.expander("🛒 Key Ingredients"):
-                st.write(ingredients_content)
+                st.write(info['ingredients'] or "Typical ingredients being researched")
 
             with st.expander("👩🍳 Traditional Preparation"):
-                st.write(preparation_content)
+                st.write(info['preparation'] or "Preparation methods coming soon")
 
             st.markdown("---")
             st.write("**Explore More**")
             st.page_link("https://en.wikipedia.org/wiki/Igbo_cuisine",
                          label="Igbo Culinary Traditions on Wikipedia")
 
+    # Example dishes gallery
     st.markdown("---")
     st.subheader("Common Igbo Dishes")
     cols = st.columns(6)
