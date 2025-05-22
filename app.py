@@ -79,11 +79,46 @@ def get_dish_info_gemini(dish_name):
     """
     try:
         response = model_genai.generate_content(prompt)
-        # Access the text directly from the response
-        return response.text
+
+        # --- IMPORTANT DEBUGGING ADDITIONS ---
+        if response.text:
+            return response.text
+        else:
+            debug_info = []
+            if response.candidates:
+                for i, candidate in enumerate(response.candidates):
+                    debug_info.append(f"Candidate {i}:")
+                    debug_info.append(f"  Finish Reason: {candidate.finish_reason}")
+                    if candidate.safety_ratings:
+                        safety_ratings_str = ", ".join([
+                            f"{sr.category.name}: {sr.probability.name}"
+                            for sr in candidate.safety_ratings
+                        ])
+                        debug_info.append(f"  Safety Ratings: {safety_ratings_str}")
+                    else:
+                        debug_info.append("  No safety ratings provided for candidate.")
+            else:
+                debug_info.append("No candidates in response.")
+
+            if response.prompt_feedback and response.prompt_feedback.safety_ratings:
+                prompt_safety_str = ", ".join([
+                    f"{sr.category.name}: {sr.probability.name}"
+                    for sr in response.prompt_feedback.safety_ratings
+                ])
+                debug_info.append(f"Prompt Feedback Safety: {prompt_safety_str}")
+            else:
+                debug_info.append("No prompt feedback safety info.")
+
+            st.warning("Gemini returned an empty text response. Debugging information:")
+            for line in debug_info:
+                st.warning(line)
+
+            return "Could not retrieve detailed information at this time. (Gemini returned no text content)"
+        # --- END IMPORTANT DEBUGGING ADDITIONS ---
+
     except Exception as e:
         st.error(f"Error fetching info from Gemini: {e}")
-        return "Could not retrieve detailed information at this time."
+        return "Could not retrieve detailed information at this time. (Gemini API error)"
 
 model = load_model()
 
