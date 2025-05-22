@@ -51,8 +51,8 @@ def predict(model, image):
 
 def get_wiki_info(dish_name):
     try:
-        summary = wikipedia.summary(dish_name + " (Igbo cuisine)", sentences=3)
-        page = wikipedia.page(dish_name + " (Igbo cuisine)")
+        summary = wikipedia.summary(dish_name + " (Igbo food)", sentences=3)
+        page = wikipedia.page(dish_name + " (Igbo food)")
         return summary, page.url
     except:
         try:
@@ -101,7 +101,7 @@ def main():
 
     # Example dishes gallery
     st.markdown("---")
-    st.subheader("Common Igbo Dishes")
+    st.subheader("Examples of meals this model can predict")
     cols = st.columns(6)
     for col, dish in zip(cols, class_labels):
         with col:
