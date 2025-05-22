@@ -52,7 +52,7 @@ def predict(model, image):
 def get_wiki_info(dish_name):
     try:
         summary = wikipedia.summary(dish_name + " (Igbo food)", sentences=3)
-        page = wikipedia.page(dish_name + " (Igbo food)")
+        page = wikipedia.page(dish_name + " (Food)")
         return summary, page.url
     except:
         try:
