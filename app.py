@@ -51,7 +51,7 @@ def predict(model, image):
 
 # Enhanced Wikipedia info fetcher using 'wikipedia'
 def get_dish_info(dish_name):
-    variants = [f"{dish_name} Soup", f"{dish_name} Stew", dish_name]
+    variants = [f"{dish_name} (Igbo dish)", f"{dish_name} (Igbo cuisine)", dish_name]
     info = {'history': '', 'ingredients': '', 'preparation': ''}
 
     sections = {
