@@ -4,7 +4,7 @@ from PIL import Image
 import torch
 from torchvision import transforms
 from fastai.vision.all import create_cnn_model, resnet18
-import wikipediaapi
+import wikipedia
 
 # Class index to dish name
 idx_to_label = {
@@ -27,12 +27,8 @@ def load_model(weights_path="igbo_dish_model_weights.pth", num_classes=6):
 with open('classes.txt') as f:
     class_labels = [line.strip() for line in f.readlines()]
 
-# Wikipedia client setup
-wiki = wikipediaapi.Wikipedia(
-    language='en',
-    extract_format=wikipediaapi.ExtractFormat.WIKI,
-    user_agent="IgboDishClassifier/1.0"
-)
+# Set Wikipedia language
+wikipedia.set_lang("en")
 
 # Image transformations
 def transform_image(image):
@@ -53,26 +49,34 @@ def predict(model, image):
         idx = torch.argmax(probs).item()
         return idx_to_label[idx], probs[idx].item()
 
-# Enhanced Wikipedia info fetcher
+# Enhanced Wikipedia info fetcher using 'wikipedia'
 def get_dish_info(dish_name):
     variants = [f"{dish_name} Soup", f"{dish_name} Stew", dish_name]
     info = {'history': '', 'ingredients': '', 'preparation': ''}
-    
+
+    sections = {
+        'history': ['history', 'origin', 'background'],
+        'ingredients': ['ingredients', 'components'],
+        'preparation': ['preparation', 'recipe', 'method']
+    }
+
     for title in variants:
-        page = wiki.page(title)
-        if page.exists():
-            sections = {
-                'history': ['History', 'Origin'],
-                'ingredients': ['Ingredients', 'Components'],
-                'preparation': ['Preparation', 'Recipe']
-            }
-            for category in sections:
-                for section in sections[category]:
-                    if not info[category]:
-                        content = page.section_by_title(section)
-                        if content:
-                            info[category] = content.text
+        try:
+            page = wikipedia.page(title)
+            content = page.content
+            content_lower = content.lower()
+            for category, keywords in sections.items():
+                for keyword in keywords:
+                    if keyword in content_lower and not info[category]:
+                        split_index = content_lower.find(keyword)
+                        if split_index != -1:
+                            para = content[split_index:].split("\n\n", 1)[0]
+                            info[category] = para.strip()
+                            break
             break
+        except (wikipedia.exceptions.DisambiguationError, wikipedia.exceptions.PageError):
+            continue
+
     return info
 
 model = load_model()
@@ -80,20 +84,20 @@ model = load_model()
 # Streamlit UI
 def main():
     st.title("🍲 Igbo Dish Classifier")
-    
+
     col1, col2 = st.columns([1, 2])
-    
+
     with col1:
         uploaded_file = st.file_uploader(
-            "Upload food image", 
+            "Upload food image",
             type=["jpg", "jpeg", "png"],
             help="Clear photo of prepared dish works best"
         )
-        
+
         if uploaded_file:
             img = Image.open(uploaded_file).convert('RGB')
             st.image(img, use_container_width=True)
-            
+
             with st.spinner("Analyzing culinary features..."):
                 label, confidence = predict(model, img)
 
@@ -101,18 +105,18 @@ def main():
         with col2:
             st.subheader(f"**Identification**: {label}")
             st.metric("Confidence Level", f"{confidence*100:.1f}%")
-            
+
             info = get_dish_info(label)
-            
+
             with st.expander("🌍 Cultural Significance", expanded=True):
                 st.write(info['history'] or "Cultural history documentation in progress")
-            
+
             with st.expander("🛒 Key Ingredients"):
                 st.write(info['ingredients'] or "Typical ingredients being researched")
-            
+
             with st.expander("👩🍳 Traditional Preparation"):
                 st.write(info['preparation'] or "Preparation methods coming soon")
-            
+
             st.markdown("---")
             st.write("**Explore More**")
             st.page_link("https://en.wikipedia.org/wiki/Igbo_cuisine",
