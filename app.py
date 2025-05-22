@@ -41,7 +41,7 @@ if not google_api_key:
 genai.configure(api_key=google_api_key)
 
 # Initialize the Generative Model
-model_genai = genai.GenerativeModel('gemini-1.5-flash-latest')
+model_genai = genai.GenerativeModel('gemini-2.0-flash')
 
 # Image transformations
 def transform_image(image):
