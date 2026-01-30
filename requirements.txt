@@ -4,3 +4,5 @@ torchvision>=0.13
 fastai>=2.7.13
 Pillow
 google-generativeai
+fastprogress>=1.0.3
+ipython>=8.0
