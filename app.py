@@ -3,6 +3,8 @@ import streamlit as st
 from PIL import Image
 import torch
 from torchvision import transforms
+import fastprogress
+fastprogress.force_console_behavior()
 from fastai.vision.all import create_cnn_model, resnet18
 import google.generativeai as genai
 import os
